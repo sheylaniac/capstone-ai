@@ -1,5 +1,10 @@
 from fastapi import APIRouter, Request, Depends, HTTPException
-from src.controllers.prediction_controller import LogSequenceRequest, PredictionResponse, PredictionController
+from src.controllers.prediction_controller import (
+    LogSequenceRequest,
+    UserPredictionRequest,
+    PredictFromLogsRequest,
+    PredictionController
+)
 
 router = APIRouter(prefix="/api/v1", tags=["Prediction"])
 
@@ -9,13 +14,23 @@ def get_prediction_controller(request: Request) -> PredictionController:
         raise HTTPException(status_code=503, detail="Prediction service is currently unavailable.")
     return controller
 
-@router.post("/predict", response_model=PredictionResponse)
-async def predict_productivity(
-    request_data: LogSequenceRequest,
+@router.post("/predict-from-logs")
+async def predict_from_logs(
+    payload: PredictFromLogsRequest,
     controller: PredictionController = Depends(get_prediction_controller)
 ):
-    try:
-        response = await controller.get_prediction(request_data)
-        return response
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+    return await controller.predict_from_logs(payload)
+
+@router.post("/predict")
+async def predict_full(
+    payload: LogSequenceRequest,
+    controller: PredictionController = Depends(get_prediction_controller)
+):
+    return await controller.predict_full(payload)
+
+@router.post("/predict-flexible")
+async def predict_flexible(
+    payload: UserPredictionRequest,
+    controller: PredictionController = Depends(get_prediction_controller)
+):
+    return await controller.predict_flexible(payload)

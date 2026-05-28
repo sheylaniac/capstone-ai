@@ -11,7 +11,7 @@ class GenAIService:
         if self.api_key:
             try:
                 genai.configure(api_key=self.api_key)
-                self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+                self.gemini_model = genai.GenerativeModel('gemini-2.5-flash')
                 self.gemini_available = True
                 print("Gemini API configured successfully in GenAIService.")
             except Exception as e:
@@ -24,50 +24,58 @@ class GenAIService:
         if self.gemini_available:
             try:
                 prompt = (
-                    f"Bertindaklah sebagai Asisten Kesehatan dan Produktivitas Personal berbasis AI.\n"
-                    f"Diberikan data prediksi pengguna untuk hari esok berdasarkan log aktivitas 7 hari terakhir:\n"
-                    f"- Prediksi Skor Produktivitas: {score:.2f}% (skala 0-100)\n"
-                    f"- Prediksi Kategori Kondisi: {category} (At Risk / Steady / Thriving)\n\n"
-                    f"Rangkuman aktivitas 7 hari terakhir:\n"
-                    f"- Rata-rata Tidur: {metrics.get('avg_sleep', 7.0):.1f} jam dengan Kualitas Tidur: {metrics.get('avg_sleep_quality', 7.0):.1f}/10\n"
-                    f"- Rata-rata Jam Kerja/Belajar: {metrics.get('avg_work', 6.0):.1f} jam\n"
-                    f"- Rata-rata Tingkat Stres: {metrics.get('avg_stress', 5.0):.1f}/10\n"
-                    f"- Rata-rata Screen Time: {metrics.get('avg_screen_time', 4.0):.1f} jam\n"
-                    f"- Akumulasi Fatigue (Kelelahan): {metrics.get('last_fatigue', 2.0):.2f}\n\n"
-                    f"Berikan rekomendasi kesehatan dan produktivitas yang personal, praktis, dan memotivasi dalam 3-4 kalimat singkat dalam bahasa Indonesia. Berikan tips konkret sesuai dengan kategori status mereka."
+                    f"Act as an analytical and professional AI Personal Health and Productivity Assistant.\n"
+                    f"Given the user's prediction data for tomorrow based on the last 7 days of activity logs:\n\n"
+                    f"Prediction for tomorrow:\n"
+                    f"- Productivity Score: {score:.2f}% (scale 0-100)\n"
+                    f"- Condition Category: {category}\n\n"
+                    f"Summary of the last 7 days of activity:\n"
+                    f"- Average sleep: {metrics.get('avg_sleep', 7.0):.1f} hours (quality: {metrics.get('avg_sleep_quality', 7.0):.1f}/10)\n"
+                    f"- Average work/study hours: {metrics.get('avg_work', 6.0):.1f} hours\n"
+                    f"- Average stress level: {metrics.get('avg_stress', 5.0):.1f}/10\n"
+                    f"- Average screen time: {metrics.get('avg_screen_time', 4.0):.1f} hours\n"
+                    f"- Fatigue accumulation: {metrics.get('last_fatigue', 2.0):.2f}\n\n"
+                    f"Write a recommendation report with the following strict constraints:\n"
+                    f"- Use formal, professional, objective, and analytical English.\n"
+                    f"- DO NOT use casual greetings (e.g., Hi, Hello) or informal pronouns.\n"
+                    f"- DO NOT use numbering, bullet points, markdown formatting (*, #), or any symbols.\n"
+                    f"- CRITICAL: Separate each core point into its own paragraph using double newlines (\\n\\n), resulting in exactly 4 distinct lines/paragraphs as follows:\n"
+                    f"  1. Paragraph 1 (User Condition Insight): Objectively state the predicted condition category (At Risk / Steady / Thriving) and the productivity score ({score:.2f}%).\n"
+                    f"  2. Paragraph 2 (Root Cause Analysis): Explain the primary factor driving the performance trend based on the provided metrics (such as sleep duration, screen time, or stress levels).\n"
+                    f"  3. Paragraph 3 (Activity Recommendation): Provide specific, actionable, and concrete behavioral recommendations to address the underlying data metrics.\n"
+                    f"  4. Paragraph 4 (Burnout or Fatigue Warning): Deliver a measured warning regarding the risks of physical fatigue or mental burnout if the current activity pattern persists."
                 )
+                
                 response = self.gemini_model.generate_content(prompt)
                 return response.text.strip()
             except Exception as e:
                 print(f"Gemini API generation error: {e}. Falling back to rules.")
+                err_msg = str(e).lower()
+                if any(x in err_msg for x in ["quota", "exhausted", "429", "limit", "api key", "invalid", "blocked"]):
+                    print("Temporarily disabling Gemini API service due to quota/rate-limiting/invalid key/blocked content.")
+                    self.gemini_available = False
         
         return self._get_fallback_recommendation(category, score, metrics)
 
     def _get_fallback_recommendation(self, category: str, score: float, metrics: dict) -> str:
-        avg_sleep = metrics.get('avg_sleep', 7.0)
-        avg_stress = metrics.get('avg_stress', 5.0)
-        
         if category == 'Thriving':
             return (
-                f"Berdasarkan analisis log 7 hari terakhir, Anda berada dalam kondisi prima (Thriving) dengan "
-                f"skor produktivitas besok yang diprediksi sebesar {score:.2f}%. Pola tidur Anda sangat baik "
-                f"(rata-rata {avg_sleep:.1f} jam) dengan tingkat stres yang rendah (rata-rata {avg_stress:.1f}/10). "
-                f"Rekomendasi: Pertahankan ritme kerja saat ini, lakukan istirahat aktif secara konsisten, dan "
-                f"hindari peningkatan beban kerja secara mendadak agar terhindar dari kelelahan di masa mendatang."
+                f"Activity log evaluation predicts a prime condition (Thriving) with a projected productivity score of {score:.2f}% for tomorrow.\n\n"
+                "This performance optimization is driven by an ideal daily sleep duration and highly controlled stress management over the past week.\n\n"
+                "It is recommended to maintain the current operational pacing while consistently integrating active micro-breaks throughout daily tasks.\n\n"
+                "This sustained effort is crucial to stabilize energy levels and mitigate the risk of latent fatigue accumulation moving forward."
             )
         elif category == 'Steady':
             return (
-                f"Berdasarkan analisis log 7 hari terakhir, Anda berada dalam kondisi stabil (Steady) dengan "
-                f"skor produktivitas besok sebesar {score:.2f}%. Pola tidur Anda cukup (rata-rata {avg_sleep:.1f} jam) "
-                f"dengan tingkat stres sedang (rata-rata {avg_stress:.1f}/10). Rekomendasi: Anda berkinerja dengan baik, "
-                f"namun pastikan untuk menjaga keseimbangan antara bekerja dan beristirahat. Sisipkan jeda singkat (break) "
-                f"5-10 menit setiap 90 menit bekerja untuk menyegarkan pikiran."
+                f"Data analysis indicates that tomorrow's condition is projected to remain stable (Steady) with an estimated productivity score of {score:.2f}%.\n\n"
+                "While current performance levels are well-maintained, prolonged exposure to screen time requires careful monitoring as it may compromise physiological recovery.\n\n"
+                "A tactical restriction of screen usage for at least one hour prior to nocturnal rest is highly advised to improve sleep efficiency.\n\n"
+                "This preventive measure is essential to forestall macro-stamina depletion and prevent a decline into higher-risk fatigue zones."
             )
         else:  # At Risk
             return (
-                f"PERINGATAN KRITIS! Berdasarkan log 7 hari terakhir, Anda berada dalam kondisi berisiko tinggi (At Risk) "
-                f"burnout dengan skor produktivitas besok yang diprediksi menurun ke {score:.2f}%. Pola tidur Anda kurang "
-                f"(rata-rata {avg_sleep:.1f} jam) dengan tingkat stres yang tinggi (rata-rata {avg_stress:.1f}/10). "
-                f"Rekomendasi: Segera kurangi beban kerja Anda hari ini. Prioritaskan tidur minimal 7-8 jam malam ini, "
-                f"batasi screen time di luar jam kerja, dan luangkan waktu untuk relaksasi total guna memulihkan kondisi fisik Anda."
+                f"Projections detect a high-risk condition (At Risk) with a decline in tomorrow's predicted productivity score to {score:.2f}%.\n\n"
+                "This indicator drop stems from a significant accumulation of fatigue, directly correlating with deficient sleep duration and elevated daily stress indexes.\n\n"
+                "The immediate priority entails reducing computational workloads tonight and dedicating the remaining hours entirely to physiological recovery.\n\n"
+                "Disregarding these recovery signals will accelerate acute burnout and cause a substantial degradation in overall cognitive capabilities."
             )

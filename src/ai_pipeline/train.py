@@ -17,9 +17,12 @@ def main():
     parser.add_argument("--epochs", type=int, default=50, help="Number of training epochs")
     parser.add_argument("--batch_size", type=int, default=128, help="Batch size")
     parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
+    parser.add_argument("--alpha", type=float, default=1.0, help="Weight for regression loss (alpha)")
+    parser.add_argument("--beta", type=float, default=3.0, help="Weight for classification loss (beta)")
+    parser.add_argument("--patience", type=int, default=5, help="Early stopping patience")
     args = parser.parse_args()
 
-    workspace = os.path.dirname(os.path.abspath(__file__))
+    workspace = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     raw_data_path = os.path.join(workspace, "data", "raw", "datasetdailylogs.csv")
         
     model_save_dir = os.path.join(workspace, "saved_models", args.version)
@@ -28,14 +31,14 @@ def main():
     
     model_save_path = os.path.join(model_save_dir, "lstmmultioutput.keras")
 
-    print(f"Starting training pipeline for model version: {args.version} ...")
+    print(f"Starting training pipeline for model version: {args.version} (alpha={args.alpha}, beta={args.beta}, patience={args.patience}) ...")
     
     print("Loading raw dataset...")
     df = pd.read_csv(raw_data_path)
 
     print("Engineering features...")
     df['fatigue_index'] = (df['stress_level'] / 10.0) * 0.4 + (df['study_work_duration'] / (df['sleep_duration'] + 1e-5)) * 0.3 + (1.0 - df['sleep_quality'] / 10.0) * 0.3
-    df['cumulative_fatigue'] = df['fatigue_index'].rolling(window=3, min_periods=1).sum()
+    df['cumulative_fatigue'] = df.groupby('user_id')['fatigue_index'].transform(lambda x: x.rolling(window=3, min_periods=1).sum())
     df['target_reg'] = df['productivity_score']
 
     def get_class_label(val):
@@ -102,6 +105,7 @@ def main():
     print("Generating 3D sekuens...")
     X_train, y_train_reg, y_train_clf = generate_sequences_for_split(train_df, feature_scaler, target_scaler)
     X_val, y_val_reg, y_val_clf = generate_sequences_for_split(val_df, feature_scaler, target_scaler)
+    X_test, y_test_reg, y_test_clf = generate_sequences_for_split(test_df, feature_scaler, target_scaler)
 
     X_train = X_train.astype(np.float32)
     y_train_reg = y_train_reg.astype(np.float32)
@@ -111,6 +115,18 @@ def main():
     y_val_reg = y_val_reg.astype(np.float32)
     y_val_clf = y_val_clf.astype(np.float32)
 
+    X_test = X_test.astype(np.float32)
+    y_test_reg = y_test_reg.astype(np.float32)
+    y_test_clf = y_test_clf.astype(np.float32)
+
+    processed_dir = os.path.join(workspace, "data", "processed")
+    os.makedirs(processed_dir, exist_ok=True)
+    np.save(os.path.join(processed_dir, "x_test.npy"), X_test)
+    np.save(os.path.join(processed_dir, "y_test_reg.npy"), y_test_reg)
+    np.save(os.path.join(processed_dir, "y_test_clf.npy"), y_test_clf)
+    test_df.to_csv(os.path.join(processed_dir, "test_raw_dataframe.csv"), index=False)
+    print("Test split datasets exported successfully to data/processed/.")
+
     train_ds = tf.data.Dataset.from_tensor_slices((X_train, {"out_regression": y_train_reg, "out_classification": y_train_clf}))
     train_ds = train_ds.shuffle(10000).batch(args.batch_size).prefetch(tf.data.AUTOTUNE)
 
@@ -119,6 +135,8 @@ def main():
 
     model = build_model()
     optimizer = tf.keras.optimizers.Adam(learning_rate=args.lr)
+    alpha_loss = tf.constant(args.alpha, dtype=tf.float32)
+    beta_loss = tf.constant(args.beta, dtype=tf.float32)
 
     train_mae = tf.keras.metrics.MeanAbsoluteError()
     train_acc = tf.keras.metrics.CategoricalAccuracy()
@@ -130,7 +148,7 @@ def main():
         with tf.GradientTape() as tape:
             y_pred_reg, y_pred_clf = model(x, training=True)
             loss_total, loss_reg, loss_clf = calculate_multi_objective_loss(
-                y_reg, y_pred_reg, y_clf, y_pred_clf, alpha=1.0, beta=1.0
+                y_reg, y_pred_reg, y_clf, y_pred_clf, alpha=alpha_loss, beta=beta_loss
             )
 
         gradients = tape.gradient(loss_total, model.trainable_variables)
@@ -145,7 +163,7 @@ def main():
     def val_step(x, y_reg, y_clf):
         y_pred_reg, y_pred_clf = model(x, training=False)
         loss_total, loss_reg, loss_clf = calculate_multi_objective_loss(
-            y_reg, y_pred_reg, y_clf, y_pred_clf, alpha=1.0, beta=1.0
+            y_reg, y_pred_reg, y_clf, y_pred_clf, alpha=alpha_loss, beta=beta_loss
         )
 
         y_pred_reg_sq = tf.squeeze(y_pred_reg, axis=-1)
@@ -154,16 +172,16 @@ def main():
         return loss_total, loss_reg, loss_clf
 
     log_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    train_log_dir = os.path.join(workspace, "logs", "fit", f"{args.version}_{log_time}", "train")
-    val_log_dir = os.path.join(workspace, "logs", "fit", f"{args.version}_{log_time}", "val")
+    train_log_dir = os.path.join(workspace, "logs", "gradient_tape", log_time, "train")
+    val_log_dir = os.path.join(workspace, "logs", "gradient_tape", log_time, "val")
     train_writer = tf.summary.create_file_writer(train_log_dir)
     val_writer = tf.summary.create_file_writer(val_log_dir)
 
-    checkpoint_callback = ModelCheckpointCallback(
-        filepath=model_save_path, monitor="val_loss", mode="min"
-    )
-
     print("\n--- Starting Custom Training Loop with tf.GradientTape ---")
+    patience = args.patience
+    wait = 0
+    best_val_loss = float('inf')
+
     for epoch in range(args.epochs):
         train_mae.reset_state()
         train_acc.reset_state()
@@ -202,9 +220,19 @@ def main():
 
         print(f"Epoch {epoch+1:02d}/{args.epochs} - loss: {avg_train_loss:.4f} - mae: {train_mae_res:.4f} - acc: {train_acc_res:.4f} | val_loss: {avg_val_loss:.4f} - val_mae: {val_mae_res:.4f} - val_acc: {val_acc_res:.4f}")
 
-        checkpoint_callback.check_and_save(avg_val_loss, model)
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            wait = 0  # reset early stopping patience counter
+            model.save(model_save_path)
+            print(f"   [Callback] Model terbaik disimpan ke '{model_save_path}' dengan val_loss: {best_val_loss:.4f}")
+        else:
+            wait += 1
+            print(f"   [Early Stopping] Tidak ada improvement. Patience: {wait}/{patience}")
+            if wait >= patience:
+                print(f"\n   [Early Stopping] Training dihentikan di epoch {epoch+1}. Val_loss tidak membaik selama {patience} epoch berturut-turut.")
+                break
 
-    print(f"\nTraining pipeline finished. Best model saved at '{model_save_path}'.")
+    print(f"\nTraining pipeline finished. Best model saved at '{model_save_path}' (Best Val Loss: {best_val_loss:.4f}).")
 
 if __name__ == "__main__":
     main()
