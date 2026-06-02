@@ -3,13 +3,36 @@ import pickle
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+import keras # <--- INI TAMBAHAN BARU KITA
 from src.ai_pipeline.components.layers import CustomAttention
+
+# =====================================================================
+# --- JURUS HACKER: MONKEY PATCH KERAS 3 (REVISI) ---
+# Bajak langsung dari inti mesin 'keras', bukan dari 'tf.keras'
+# =====================================================================
+
+# 1. Bajak keras.layers.Dense
+original_dense_init = keras.layers.Dense.__init__
+def safe_dense_init(self, *args, **kwargs):
+    kwargs.pop('quantization_config', None) # Culik dan buang config error
+    original_dense_init(self, *args, **kwargs) # Kembalikan ke fungsi asli
+keras.layers.Dense.__init__ = safe_dense_init
+
+# 2. Bajak keras.layers.LSTM
+original_lstm_init = keras.layers.LSTM.__init__
+def safe_lstm_init(self, *args, **kwargs):
+    kwargs.pop('quantization_config', None) # Culik dan buang config error
+    original_lstm_init(self, *args, **kwargs) # Kembalikan ke fungsi asli
+keras.layers.LSTM.__init__ = safe_lstm_init
+
+# =====================================================================
 
 class AIInferenceService:
     def __init__(self, version: str = "v1"):
+# ... (sisa kodemu ke bawah tetap biarkan sama persis) ...
         self.version = version
         current_dir = os.path.dirname(os.path.abspath(__file__)) 
-        src_dir = os.path.dirname(current_dir)                   
+        src_dir = os.path.dirname(current_dir)                    
         self.workspace = os.path.dirname(src_dir)
         
         self.model_dir = os.path.join(self.workspace, "saved_models", self.version)
@@ -32,12 +55,19 @@ class AIInferenceService:
 
     def load_artifacts(self):
         if not os.path.exists(self.model_path):
-            raise FileNotFoundError(f"Model version '{self.version}' not found at path: {self.model_path}. Please train the model first.")
+            raise FileNotFoundError(f"Model version '{self.version}' not found.")
             
         print(f"Loading TensorFlow model version '{self.version}' from {self.model_path}...")
+        
+        # 👇 UBAH BAGIAN INI JADI GINI AJA 👇
+        custom_objects = {
+            'CustomAttention': CustomAttention
+        }
+
         self.model = tf.keras.models.load_model(
             self.model_path,
-            custom_objects={'CustomAttention': CustomAttention}
+            custom_objects=custom_objects,
+            compile=False 
         )
         print("Model loaded successfully.")
         

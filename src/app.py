@@ -4,10 +4,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from src.services.ai_inference_service import AIInferenceService
 from src.services.genai_service import GenAIService
 from src.controllers.prediction_controller import PredictionController
-from src.routes.prediction_routes import router as prediction_router
+from src.routes.prediction_route import router as prediction_router
 
 # ─── APPLICATION INITIALIZATION & LIFESPAN ───────────────────────────────────
 
