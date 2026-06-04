@@ -9,7 +9,8 @@ from sklearn.preprocessing import MinMaxScaler
 
 from src.ai_pipeline.model import build_model
 from src.ai_pipeline.components.losses import calculate_multi_objective_loss
-from src.ai_pipeline.components.callbacks import ModelCheckpointCallback
+from src.ai_pipeline.components.callbacks import ModelCheckpointCallback, EarlyStoppingLRCallback
+
 
 def main():
     parser = argparse.ArgumentParser(description="Train multi-output LSTM model with Custom Training Loop")
@@ -23,7 +24,7 @@ def main():
     args = parser.parse_args()
 
     workspace = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    raw_data_path = os.path.join(workspace, "data", "raw", "datasetdailylogs.csv")
+    raw_data_path = os.path.join(workspace, "data", "raw", "final_dataset_model_ready.csv")
         
     model_save_dir = os.path.join(workspace, "saved_models", args.version)
     artifacts_dir = os.path.join(model_save_dir, "artifacts")
@@ -37,21 +38,8 @@ def main():
     df = pd.read_csv(raw_data_path)
 
     print("Engineering features...")
-    df['fatigue_index'] = (df['stress_level'] / 10.0) * 0.4 + (df['study_work_duration'] / (df['sleep_duration'] + 1e-5)) * 0.3 + (1.0 - df['sleep_quality'] / 10.0) * 0.3
-    df['cumulative_fatigue'] = df.groupby('user_id')['fatigue_index'].transform(lambda x: x.rolling(window=3, min_periods=1).sum())
     df['target_reg'] = df['productivity_score']
-
-    def get_class_label(val):
-        if pd.isna(val):
-            return np.nan
-        if val < 55.0:
-            return 0  # At Risk
-        elif val <= 67.0:
-            return 1  # Steady
-        else:
-            return 2  # Thriving
-
-    df['target_clf'] = df['target_reg'].apply(get_class_label)
+    df['target_clf'] = df['productivity_label']
     df = df.dropna(subset=['target_reg', 'target_clf']).reset_index(drop=True)
 
     print("Splitting dataset chronologically per user...")
@@ -69,10 +57,10 @@ def main():
     test_df = pd.concat(test_dfs).reset_index(drop=True)
 
     feature_cols = [
-        'sleep_duration', 'sleep_quality', 'study_work_duration', 'break_duration',
-        'physical_activity_duration', 'screen_time_duration', 'stress_level', 'mood_score',
-        'focus_score', 'task_planned', 'task_completed', 'task_completion_rate',
-        'day_of_week', 'month', 'is_weekend', 'cumulative_fatigue'
+        'is_weekend', 'sleep_duration', 'study_work_duration', 'break_duration',
+        'exercise_duration', 'downtime_duration', 'stress_level', 'mood_score',
+        'focus_score', 'task_planned', 'task_completed', 'completion_ratio',
+        'fatigue_index', 'cumulative_fatigue'
     ]
 
     print("Fitting MinMaxScaler and scaling data...")
@@ -177,10 +165,8 @@ def main():
     train_writer = tf.summary.create_file_writer(train_log_dir)
     val_writer = tf.summary.create_file_writer(val_log_dir)
 
-    print("\n--- Starting Custom Training Loop with tf.GradientTape ---")
-    patience = args.patience
-    wait = 0
-    best_val_loss = float('inf')
+    callback = EarlyStoppingLRCallback(model=model, optimizer=optimizer, patience=args.patience, lr_patience=args.patience, save_path=model_save_path)
+    history_metrics = {'train_loss': [], 'train_mae': [], 'train_acc': [], 'val_loss': [], 'val_mae': [], 'val_acc': []}
 
     for epoch in range(args.epochs):
         train_mae.reset_state()
@@ -209,6 +195,14 @@ def main():
         val_mae_res = val_mae.result().numpy()
         val_acc_res = val_acc.result().numpy()
 
+        # Save history metrics
+        history_metrics['train_loss'].append(float(avg_train_loss))
+        history_metrics['train_mae'].append(float(train_mae_res))
+        history_metrics['train_acc'].append(float(train_acc_res))
+        history_metrics['val_loss'].append(float(avg_val_loss))
+        history_metrics['val_mae'].append(float(val_mae_res))
+        history_metrics['val_acc'].append(float(val_acc_res))
+
         with train_writer.as_default():
             tf.summary.scalar('loss', avg_train_loss, step=epoch)
             tf.summary.scalar('mae', train_mae_res, step=epoch)
@@ -220,19 +214,19 @@ def main():
 
         print(f"Epoch {epoch+1:02d}/{args.epochs} - loss: {avg_train_loss:.4f} - mae: {train_mae_res:.4f} - acc: {train_acc_res:.4f} | val_loss: {avg_val_loss:.4f} - val_mae: {val_mae_res:.4f} - val_acc: {val_acc_res:.4f}")
 
-        if avg_val_loss < best_val_loss:
-            best_val_loss = avg_val_loss
-            wait = 0  # reset early stopping patience counter
-            model.save(model_save_path)
-            print(f"   [Callback] Model terbaik disimpan ke '{model_save_path}' dengan val_loss: {best_val_loss:.4f}")
-        else:
-            wait += 1
-            print(f"   [Early Stopping] Tidak ada improvement. Patience: {wait}/{patience}")
-            if wait >= patience:
-                print(f"\n   [Early Stopping] Training dihentikan di epoch {epoch+1}. Val_loss tidak membaik selama {patience} epoch berturut-turut.")
-                break
+        callback.on_epoch_end(epoch, logs={'val_loss': avg_val_loss})
 
-    print(f"\nTraining pipeline finished. Best model saved at '{model_save_path}' (Best Val Loss: {best_val_loss:.4f}).")
+        if callback.stop_training:
+            break
+
+    # Save history to json file
+    import json
+    history_json_path = os.path.join(model_save_dir, "history_metrics.json")
+    with open(history_json_path, 'w') as f:
+        json.dump(history_metrics, f)
+    print(f"Training history saved to '{history_json_path}'")
+
+    print(f"\nTraining pipeline finished. Best model saved at '{model_save_path}' (Best Val Loss: {callback.best_val_loss:.4f}).")
 
 if __name__ == "__main__":
     main()

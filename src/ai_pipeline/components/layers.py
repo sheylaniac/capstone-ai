@@ -24,6 +24,7 @@ class CustomAttention(layers.Layer):
 
     def call(self, inputs):
         e = tf.tensordot(inputs, self.W, axes=[-1, 0]) + self.b 
+        e = tf.nn.tanh(e)
         alpha = tf.nn.softmax(e, axis=1)
         context = inputs * alpha 
         context = tf.reduce_sum(context, axis=1) 

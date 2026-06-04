@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow.keras import layers
 from src.ai_pipeline.components.layers import CustomAttention
 
-def build_model(input_shape=(7, 16), name="multi_output_lstm"):
+def build_model(input_shape=(7, 14), name="multi_output_lstm"):
 
     inputs = layers.Input(shape=input_shape, name="input_layer")
     

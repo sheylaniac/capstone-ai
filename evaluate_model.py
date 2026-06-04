@@ -67,7 +67,7 @@ def main():
 
     # Check targets
     if acc_val >= 0.85 and mae_val <= 0.02:
-        print("STATUS: PERFORMANCE TARGET SUCCESSFULLY MET! 🎉")
+        print("STATUS: PERFORMANCE TARGET SUCCESSFULLY MET! [SUCCESS]")
     else:
         print("STATUS: PERFORMANCE TARGET FAILED. TRY ADJUSTING HYPERPARAMETERS.")
     print("=" * 60)
@@ -89,11 +89,6 @@ def main():
     plot_path = os.path.join(workspace, "saved_models", args.version, "confusion_matrix.png")
     plt.savefig(plot_path)
     print(f"Confusion matrix saved to '{plot_path}'")
-    plt.show()
-
-    with open(history_path, 'w') as f:
-        json.dump(history_metrics, f)
-    print(f"History metrics saved to '{history_path}'")
 
     history_path = os.path.join(workspace, "saved_models", args.version, "history_metrics.json")
     if os.path.exists(history_path):
@@ -121,7 +116,6 @@ def main():
         plot_path = os.path.join(workspace, "saved_models", args.version, "training_curves.png")
         plt.savefig(plot_path)
         print(f"Training curves saved to '{plot_path}'")
-        plt.show()
     else:
         print("History metrics not found, skipping training curves.")
 

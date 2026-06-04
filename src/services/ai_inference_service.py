@@ -3,13 +3,27 @@ import pickle
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+import keras 
 from src.ai_pipeline.components.layers import CustomAttention
+
+original_dense_init = keras.layers.Dense.__init__
+def safe_dense_init(self, *args, **kwargs):
+    kwargs.pop('quantization_config', None) 
+    original_dense_init(self, *args, **kwargs) 
+keras.layers.Dense.__init__ = safe_dense_init
+
+# 2. Bajak keras.layers.LSTM
+original_lstm_init = keras.layers.LSTM.__init__
+def safe_lstm_init(self, *args, **kwargs):
+    kwargs.pop('quantization_config', None) 
+    original_lstm_init(self, *args, **kwargs) 
+keras.layers.LSTM.__init__ = safe_lstm_init
 
 class AIInferenceService:
     def __init__(self, version: str = "v1"):
         self.version = version
         current_dir = os.path.dirname(os.path.abspath(__file__)) 
-        src_dir = os.path.dirname(current_dir)                   
+        src_dir = os.path.dirname(current_dir)                    
         self.workspace = os.path.dirname(src_dir)
         
         self.model_dir = os.path.join(self.workspace, "saved_models", self.version)
@@ -22,22 +36,28 @@ class AIInferenceService:
         self.target_scaler = None
         
         self.feature_cols = [
-            'sleep_duration', 'sleep_quality', 'study_work_duration', 'break_duration', 
-            'physical_activity_duration', 'screen_time_duration', 'stress_level', 'mood_score', 
-            'focus_score', 'task_planned', 'task_completed', 'task_completion_rate', 
-            'day_of_week', 'month', 'is_weekend', 'cumulative_fatigue'
+            'is_weekend', 'sleep_duration', 'study_work_duration', 'break_duration',
+            'exercise_duration', 'downtime_duration', 'stress_level', 'mood_score',
+            'focus_score', 'task_planned', 'task_completed', 'completion_ratio',
+            'fatigue_index', 'cumulative_fatigue'
         ]
         
         self.load_artifacts()
 
     def load_artifacts(self):
         if not os.path.exists(self.model_path):
-            raise FileNotFoundError(f"Model version '{self.version}' not found at path: {self.model_path}. Please train the model first.")
+            raise FileNotFoundError(f"Model version '{self.version}' not found.")
             
         print(f"Loading TensorFlow model version '{self.version}' from {self.model_path}...")
+        
+        custom_objects = {
+            'CustomAttention': CustomAttention
+        }
+
         self.model = tf.keras.models.load_model(
             self.model_path,
-            custom_objects={'CustomAttention': CustomAttention}
+            custom_objects=custom_objects,
+            compile=False 
         )
         print("Model loaded successfully.")
         
@@ -57,8 +77,19 @@ class AIInferenceService:
 
         df_raw = pd.DataFrame(raw_logs)
         
-        df_raw['fatigue_index'] = (df_raw['stress_level'] / 10.0) * 0.4 + (df_raw['study_work_duration'] / (df_raw['sleep_duration'] + 1e-5)) * 0.3 + (1.0 - df_raw['sleep_quality'] / 10.0) * 0.3
-        df_raw['cumulative_fatigue'] = df_raw['fatigue_index'].rolling(window=3, min_periods=1).sum()
+        df_raw['fatigue_index'] = (
+            (df_raw['stress_level'] / 8.0)        * 40 +
+            (df_raw['downtime_duration'] / 11.21) * 30 +
+            (df_raw['study_work_duration'] / 17.405)  * 30
+        ).clip(0, 100).round(2)
+
+        df_raw['cumulative_fatigue'] = (
+            df_raw['fatigue_index'].ewm(alpha=1-0.9, adjust=False).mean()  
+        ).clip(0, 100).round(2)
+
+        df_raw['completion_ratio'] = (
+            df_raw['task_completed'] / df_raw['task_planned'].replace(0, 1)
+        ).clip(0, 1).round(3)
         
         feats_scaled = self.feature_scaler.transform(df_raw[self.feature_cols])
         
@@ -82,10 +113,11 @@ class AIInferenceService:
         
         metrics = {
             'avg_sleep': float(df_raw['sleep_duration'].mean()),
-            'avg_sleep_quality': float(df_raw['sleep_quality'].mean()),
+            'avg_sleep_quality': float(df_raw['mood_score'].mean()), 
             'avg_work': float(df_raw['study_work_duration'].mean()),
             'avg_stress': float(df_raw['stress_level'].mean()),
-            'avg_screen_time': float(df_raw['screen_time_duration'].mean()),
+            'avg_screen_time': float(df_raw['downtime_duration'].mean()),
+            'avg_downtime': float(df_raw['downtime_duration'].mean()),
             'last_fatigue': float(df_raw['cumulative_fatigue'].iloc[-1])
         }
         
