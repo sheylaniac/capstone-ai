@@ -12,7 +12,6 @@ from src.services.genai_service import GenAIService
 from src.controllers.prediction_controller import PredictionController
 from src.routes.prediction_routes import router as prediction_router
 
-# ─── APPLICATION INITIALIZATION & LIFESPAN ───────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -33,10 +32,7 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-# Register prediction router
 app.include_router(prediction_router)
-
-# ─── ROUTING ENDPOINTS ───────────────────────────────────────────────────────
 
 @app.get("/")
 async def root():

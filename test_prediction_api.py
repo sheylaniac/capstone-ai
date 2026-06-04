@@ -52,12 +52,6 @@ def run_integration_tests():
 
     # 3. Construct a valid payload
     user_id = "test_user_123"
-    user_goals = {
-        "focus_sleep": True,
-        "focus_productivity": True,
-        "focus_fitness": False,
-        "focus_screen_time": False
-    }
     
     import random
     
@@ -136,7 +130,6 @@ def run_integration_tests():
         
     payload = {
         "user_id": user_id,
-        "user_goals": user_goals,
         "last_7_logs": last_7_logs
     }
     

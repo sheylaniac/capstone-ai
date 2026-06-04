@@ -3,7 +3,7 @@ import pickle
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-import keras
+import keras 
 from src.ai_pipeline.components.layers import CustomAttention
 
 original_dense_init = keras.layers.Dense.__init__
@@ -12,12 +12,12 @@ def safe_dense_init(self, *args, **kwargs):
     original_dense_init(self, *args, **kwargs) 
 keras.layers.Dense.__init__ = safe_dense_init
 
+# 2. Bajak keras.layers.LSTM
 original_lstm_init = keras.layers.LSTM.__init__
 def safe_lstm_init(self, *args, **kwargs):
     kwargs.pop('quantization_config', None) 
     original_lstm_init(self, *args, **kwargs) 
 keras.layers.LSTM.__init__ = safe_lstm_init
-
 
 class AIInferenceService:
     def __init__(self, version: str = "v1"):
@@ -84,7 +84,7 @@ class AIInferenceService:
         ).clip(0, 100).round(2)
 
         df_raw['cumulative_fatigue'] = (
-            df_raw['fatigue_index'].ewm(alpha=1-0.9, adjust=False).mean()  # alpha=0.1
+            df_raw['fatigue_index'].ewm(alpha=1-0.9, adjust=False).mean()  
         ).clip(0, 100).round(2)
 
         df_raw['completion_ratio'] = (
