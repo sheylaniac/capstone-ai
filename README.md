@@ -6,6 +6,13 @@ Sistem ini dilengkapi dengan layanan rekomendasi kesehatan adaptif berbasis **Go
 
 ---
 
+## Model AI (Deep Learning)
+
+Model LSTM yang digunakan dalam sistem ini disimpan secara eksternal untuk menghemat ukuran repository.
+
+Download model:
+- Google Drive: https://drive.google.com/file/d/18OiwG6ekcKDtwHvw0KN-NirBngt5EhTU/view?usp=sharing
+
 ## Pemetaan Kriteria Penilaian Capstone (AI Checklist)
 
 Proyek ini telah dirancang untuk memenuhi **100% kriteria penilaian AI Capstone Project** (kriteria wajib & opsional/nilai tambah):
