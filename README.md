@@ -160,9 +160,9 @@ pip install -r requirements.txt
 ### 2. Konfigurasi Environment (.env)
 Buat file `.env` pada folder root proyek:
 ```env
-GEMINI_API_KEY=AIzaSy... (Masukkan kunci API Gemini Anda di sini)
+GEMINI_API_KEY=(Masukkan kunci API Gemini Anda di sini)
 MODEL_VERSION=v1
-SECRET_TOKEN_AI=token_rahasia_anda_disini
+SECRET_TOKEN_AI=(Masukkan di sini)
 ```
 
 ### 3. Menjalankan Server API FastAPI
