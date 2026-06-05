@@ -13,6 +13,22 @@ Model LSTM yang digunakan dalam sistem ini disimpan secara eksternal untuk mengh
 Download model:
 - Google Drive: https://drive.google.com/file/d/18OiwG6ekcKDtwHvw0KN-NirBngt5EhTU/view?usp=sharing
 
+---
+
+## 🚀 Daily Check-in Feature
+
+Fitur **Daily Check-in** adalah fitur interaktif berbasis face detection yang digunakan untuk mendeteksi mood serta mencatat aktivitas harian secara cepat.  
+
+Fitur ini berfungsi sebagai sumber data bagi **Digital Twin pengguna** tanpa membuat proses input terasa membosankan. Pengguna dapat memasukkan data harian melalui gambar wajah, yang kemudian diproses untuk menghasilkan insight berupa:
+- Emosi pengguna
+- Perkiraan usia
+- Gender
+- Confidence score analisis
+
+Data ini digunakan sebagai dasar dalam proses analisis perilaku dan produktivitas pengguna pada sistem Digital Twin.
+
+---
+
 ## Pemetaan Kriteria Penilaian Capstone (AI Checklist)
 
 Proyek ini telah dirancang untuk memenuhi **100% kriteria penilaian AI Capstone Project** (kriteria wajib & opsional/nilai tambah):
@@ -96,6 +112,9 @@ dtwin-ai/
 │
 ├── data/                       # Tempat Penyimpanan Dataset
 │   └── final_dataset_model_ready.csv  # Dataset latih dan validasi utama
+│
+├── face detection/                       # Tempat face detection
+│   └── main.py  # Face detection untuk mendeteksi mood manusia 
 │
 ├── saved_models/               # Tempat Penyimpanan Model (Mendukung Versioning)
 │   └── v1/                     # Folder versi model (v1, v2, dst.)
