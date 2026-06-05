@@ -187,11 +187,6 @@ Mengirimkan 7 data harian historis beserta preferensi gol pengguna untuk mengest
   ```json
   {
     "user_id": "user_active_999",
-    "user_goals": {
-      "focus_sleep": true,
-      "focus_productivity": true,
-      "focus_fitness": false,
-      "focus_screen_time": false
     },
     "last_7_logs": [
       {
